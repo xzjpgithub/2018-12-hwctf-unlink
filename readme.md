@@ -39,15 +39,57 @@ BK->fd = FD ==> P->bk->fd = P->fd
             ==> A+0x18 = A
             ==> A = A - 0x18 //A最终会被赋值成A-0x18的值，这里=不是等，是赋值
 ```
+说人话，double free 就是找到一个指向P的指针A，让P的fd和bk和A互相指，通过if的判断，并且可以修改A的值
+这里说的可能不是很清楚，用题目里面的具体数据来解释可能会好一些
 
+## unlink
+### 一个menu题目
+!()[img/menu.PNG]
 
+### 漏洞点
+首先看一下new_note
+qword_6020A8+8 是note总数量
+之后是一个结构体
+```
+struct note{
+    int in_use;     //qword_6020A8+24*i+16
+    int len;        //qword_6020A8+24*i+24
+    char* data;     //qword_6020A8+24*i+32
+}
+```
+!()[img/new_note.PNG]
 
+漏洞点主要在free_note
+free_note只将in_use和len清0，总数减一，但是free的时候没有判断这个note是否in_use
+并且data的指针只free，没有置空，所以这里存在double free
+!()[img/free_note.PNG]
 
+### 利用总体思路
+1.申请smallbin大小的chunk，然后将其free，使得此chunk的fd和bk填充上unsorted bin的地址
+2.使用edit_note合并第一步free的chunk,然后通过list泄露libc基址，用同样的方法泄露出heap的基址
+3.利用note结构体中指向heap的指针和heap中的chunk构造double free，使得修改了note结构体中data的地址，让data指向了note结构体
+4.edit根据note结构体中的data来写，所以这一步可以对note结构体里面的任意写，这里
+```
+note[0]->data=free_hook
+note[1]->data=note[2]->in_use
+note[2]->in_use='/bin/sh\x00'
+```
+5.然后edit(note[0])就可以修改free_hook的地址，修改成system，之后free(note[1]->data) --> system('/bin/sh\x00')
 
+### 详细的利用步骤
+#### 1.申请smallbin大小的chunk，然后将其free，使得此chunk的fd和bk填充上unsorted bin的地址
+chunkb和chunkd都被串在unsorted bin 上
+```
+new(0x100,'a'*0xff)
+new(0x100,'b'*0xff)
+new(0x100,'c'*0xff)
+new(0x100,'d'*0xff)
+new(0x100,'e'*0xff)
 
+delete(1)
+delete(3)
 
-
-
+```
 
 
 
