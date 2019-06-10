@@ -110,13 +110,14 @@ success(hex(gbuff))
 ```
 
 #### 3.利用note结构体中指向heap的指针和heap中的chunk构造double free
-虽然chunkb在前面被free了，但是在note结构体中依然保存着chunkb的data区域的指针<br>
+虽然chunkb在前面被free了，但是在note[1]结构体中依然保存着chunkb的data区域的指针<br>
 然后通过edit中的realloc可以修改chunkb的fd和bk伪造chunk<br>
 chunka+chunkb的这一块大空间伪造了三个chunk<br>
 chunk0(free)+chunk1(将要被free，造成double free)+chunk2(size正常，规避next-size检测机制)<br>
+Q1:如何double free呢？
 
-
-
+![](img/double_free_heap.PNG)
+![](img/double_free_note.PNG)<br>
 
 
 
