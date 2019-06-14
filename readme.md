@@ -114,11 +114,21 @@ success(hex(gbuff))
 然后通过edit中的realloc可以修改chunkb的fd和bk伪造chunk<br>
 chunka+chunkb的这一块大空间伪造了三个chunk<br>
 chunk0(free)+chunk1(将要被free，造成double free)+chunk2(size正常，规避next-size检测机制)<br>
-Q1:如何double free呢？
-
-![](img/double_free_heap.PNG)
+#### Q1:如何double free呢？
+我们可以再图2中note[0]->data找到指向chunk1的指针，如果能使chunk1和note[0]->data形成一个双向链表，就可以通过free(chunk2 or old chunkb),然后就会尝试unlink chunk1，由于chunk1满足unlink的检测条件，所以这里可以unlink成功，并且可以将note[0]->data修改成chunk1的fd<br><br>
+#### Q2:为什么可以free(chunk2 or old chunkb)，chunk2不是已经在new chunka中了吗？
+free_note的时候并没有检查当前chunk是否处于in_use的状态，并且也没有对note->data区域清空，所以这里可以再次free<br><br>
+#### Q3:为什么chunk1的fd=0x601018,bk=0x601020，就可以满足double free的条件？
+因为要通过double的检测，所以chunk1->fd->bk=chunk1，(chunk1->fd)+0x18=0x603030,0x603030指向的就是chunk1<br>
+得到chunk1->fd=0x603018,同理 chunk1->bk=0x603030-0x10 = 0x603020。<br><br>
+#### Q4:为什么unlink chunk1之后会将note[0]->data修改成0x603018?
+对于我们这种情况，chunk1->fd->bk = chunk1->bk->fd = 0x603030(note[0]->data)<br>
+即 FD->bk=BK->fd=0x603030(note[0]->data)，之后对FD->bk、BK->fd进行了赋值<br>
+FD->bk=chunk1->bk,chunkBK->fd=chunk1->fd，所以note[0]->data最终被赋值成chunk1->fd<br><br>
+![](img/double_free_heap.PNG)<br>
+图1：heap<br>
 ![](img/double_free_note.PNG)<br>
-
+图2：note<br>
 
 
 
